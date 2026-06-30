@@ -8,6 +8,7 @@ import io
 import random
 import json
 import math
+import sys
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
@@ -23,9 +24,43 @@ from telegram.ext import (
 
 # ==================== CONFIGURATION ====================
 
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+# Try multiple possible token variable names
+BOT_TOKEN = (
+    os.environ.get("TELEGRAM_TOKEN") or
+    os.environ.get("TELEGRAM_BOT_TOKEN") or
+    os.environ.get("BOT_TOKEN")
+)
+
+# If token is not set, try reading from .env file
 if not BOT_TOKEN:
-    raise ValueError("❌ TELEGRAM_BOT_TOKEN environment variable not set!")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        BOT_TOKEN = (
+            os.environ.get("TELEGRAM_TOKEN") or
+            os.environ.get("TELEGRAM_BOT_TOKEN") or
+            os.environ.get("BOT_TOKEN")
+        )
+    except:
+        pass
+
+# If still no token, show error
+if not BOT_TOKEN:
+    print("=" * 60)
+    print("❌ ERROR: No Telegram Bot Token found!")
+    print("=" * 60)
+    print("Please set one of these environment variables:")
+    print("  - TELEGRAM_TOKEN")
+    print("  - TELEGRAM_BOT_TOKEN")
+    print("  - BOT_TOKEN")
+    print("=" * 60)
+    print("In Railway:")
+    print("1. Go to your project dashboard")
+    print("2. Click on 'Variables' tab")
+    print("3. Add variable: TELEGRAM_TOKEN = your_bot_token")
+    print("4. Click 'Deploy'")
+    print("=" * 60)
+    raise ValueError("❌ No Telegram Bot Token found in environment variables!")
 
 BOT_NAME = "Palette Forge Bot"
 BOT_USERNAME = "palette_forge_bot"
@@ -309,33 +344,6 @@ def generate_palette(base_color: str, harmony: str, count: int) -> List[str]:
     
     return [base_color]
 
-def get_contrast_ratio(color1: str, color2: str) -> float:
-    """Calculate contrast ratio between two colors"""
-    def luminance(r, g, b):
-        rgb = [r/255, g/255, b/255]
-        for i, c in enumerate(rgb):
-            if c <= 0.03928:
-                rgb[i] = c / 12.92
-            else:
-                rgb[i] = ((c + 0.055) / 1.055) ** 2.4
-        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
-    
-    rgb1 = hex_to_rgb(color1)
-    rgb2 = hex_to_rgb(color2)
-    l1 = luminance(rgb1[0], rgb1[1], rgb1[2])
-    l2 = luminance(rgb2[0], rgb2[1], rgb2[2])
-    
-    if l1 > l2:
-        return (l1 + 0.05) / (l2 + 0.05)
-    else:
-        return (l2 + 0.05) / (l1 + 0.05)
-
-def suggest_text_color(hex_color: str) -> str:
-    """Suggest text color (black or white) for readability"""
-    rgb = hex_to_rgb(hex_color)
-    brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000
-    return "#000000" if brightness > 128 else "#FFFFFF"
-
 def get_color_name(hex_color: str) -> str:
     """Get a simple color name from hex"""
     color_names = {
@@ -347,6 +355,12 @@ def get_color_name(hex_color: str) -> str:
         "#FFD700": "Gold", "#EE82EE": "Violet", "#DC143C": "Crimson"
     }
     return color_names.get(hex_color.upper(), "Custom")
+
+def suggest_text_color(hex_color: str) -> str:
+    """Suggest text color (black or white) for readability"""
+    rgb = hex_to_rgb(hex_color)
+    brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000
+    return "#000000" if brightness > 128 else "#FFFFFF"
 
 # ==================== IMAGE GENERATION ====================
 
@@ -394,7 +408,7 @@ def create_palette_image(colors: List[str], width: int = 800, height: int = 400)
                 pass
         
         # Add footer
-        footer = f"{len(colors)} colors • Harmony: {get_user_data(0).get('settings', {}).get('harmony', 'monochromatic').capitalize()}"
+        footer = f"{len(colors)} colors"
         try:
             bbox = draw.textbbox((0, 0), footer, font=small_font)
             draw.text(((width - (bbox[2] - bbox[0])) // 2, height - 30), 
@@ -795,6 +809,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             colors = generate_palette(text, harmony, count)
             context.user_data["last_palette"] = colors
             
+            # Update history
+            if "history" not in data:
+                data["history"] = []
+            data["history"].append({
+                "colors": colors,
+                "harmony": harmony,
+                "timestamp": datetime.now().isoformat()
+            })
+            settings["last_generated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            
             img_data = create_palette_image(colors)
             
             color_list = "\n".join([f"• {c}" for c in colors])
@@ -922,15 +946,19 @@ async def generate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== MAIN ====================
 
 async def post_init(application):
-    print("=" * 50)
-    print(f"🎨 {BOT_NAME} Started!")
-    print(f"🤖 @{BOT_USERNAME}")
+    print("=" * 60)
+    print(f"🎨 {BOT_NAME} Started Successfully!")
+    print(f"🤖 Username: @{BOT_USERNAME}")
     print(f"📦 Version: {BOT_VERSION}")
     print(f"🌈 Harmony Rules: {len(HARMONY_RULES)}")
-    print("=" * 50)
+    print(f"🎨 Common Colors: {len(COMMON_COLORS)}")
+    print("=" * 60)
+    print("✅ Bot is ready to serve users!")
+    print("=" * 60)
 
 def main():
     print(f"🚀 Starting {BOT_NAME}...")
+    print(f"📡 Using token: {BOT_TOKEN[:15]}...{BOT_TOKEN[-5:]}")
     
     application = ApplicationBuilder() \
         .token(BOT_TOKEN) \
@@ -949,7 +977,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     
-    print("✅ Bot is running!")
+    print("✅ Bot is polling for updates...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
