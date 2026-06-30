@@ -1,2 +1,12 @@
-python-telegram-bot==20.7
-Pillow==10.1.0
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10,
+    "startCommand": "python palette_forge_bot.py"
+  }
+}
